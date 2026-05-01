@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Urban Planner by Veee</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Real-time multiplayer city strategy</p>
+          <h1>Urban Planner by Veee</h1>
+          <p class="hero-copy">
+            Build the smartest 10x10 city block before the clock runs out. Schools and hospitals help your homes thrive.
+            Industries can boost capacity, but stack them badly and your score collapses.
+          </p>
+        </div>
+        <div class="hero-card">
+          <p class="hero-label">Round Rules</p>
+          <ul>
+            <li>House near school: +15</li>
+            <li>House near hospital: +20</li>
+            <li>House near industry: -30</li>
+            <li>Clustered industries: penalty</li>
+          </ul>
+        </div>
+      </header>
+
+      <main class="main-layout">
+        <section class="panel" id="lobbyPanel">
+          <div class="panel-header">
+            <h2>Lobby</h2>
+            <span class="status-pill" id="connectionStatus">Connecting...</span>
+          </div>
+
+          <label class="field">
+            <span>Player name</span>
+            <input id="playerName" type="text" maxlength="18" placeholder="Planner name" />
+          </label>
+
+          <div class="lobby-actions">
+            <button id="createRoomBtn" class="primary-btn">Create Room</button>
+          </div>
+
+          <div class="join-box">
+            <label class="field">
+              <span>Room code</span>
+              <input id="roomCodeInput" type="text" maxlength="5" placeholder="ABCDE" />
+            </label>
+            <button id="joinRoomBtn" class="secondary-btn">Join Room</button>
+          </div>
+
+          <p id="lobbyMessage" class="message"></p>
+        </section>
+
+        <section class="game-layout hidden" id="gamePanel">
+          <div class="board-panel panel">
+            <div class="panel-header game-header">
+              <div>
+                <h2>Your Layout</h2>
+                <p class="subtle">Room <strong id="roomCodeLabel">-----</strong></p>
+              </div>
+              <div class="timer-box">
+                <span>Timer</span>
+                <strong id="timerLabel">--:--</strong>
+              </div>
+            </div>
+            <div id="grid" class="grid" aria-label="Urban planning grid"></div>
+          </div>
+
+          <aside class="side-panel">
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Planner Kit</h2>
+                <button id="startRoundBtn" class="primary-btn">Start Round</button>
+              </div>
+              <div id="itemPalette" class="palette"></div>
+              <p id="placementHint" class="message small"></p>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Players</h2>
+                <span class="status-pill" id="phasePill">Lobby</span>
+              </div>
+              <div id="playersList" class="players-list"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Results</h2>
+                <span class="status-pill accent" id="leaderLabel">Waiting</span>
+              </div>
+              <div id="resultsList" class="results-list empty-state">
+                Finish a round to see scores.
+              </div>
+              <div id="winnerBoardWrap" class="winner-board-wrap hidden">
+                <p class="subtle strongish">Best layout</p>
+                <div id="winnerBoard" class="mini-grid"></div>
+              </div>
+            </section>
+          </aside>
+        </section>
+      </main>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/main.js"></script>
+  </body>
+  </html>
