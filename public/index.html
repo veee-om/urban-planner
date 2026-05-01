@@ -4,32 +4,41 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Urban Planner by Veee</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
-    <div class="app-shell">
-      <header class="hero">
-        <div>
-          <p class="eyebrow">Real-time multiplayer city strategy</p>
+    <div class="screen landing-screen" id="landingScreen">
+      <div class="landing-shell">
+        <section class="landing-copy">
+          <p class="eyebrow">Multiplayer city planning on a real map</p>
           <h1>Urban Planner by Veee</h1>
           <p class="hero-copy">
-            Build the smartest 10x10 city block before the clock runs out. Schools and hospitals help your homes thrive.
-            Industries can boost capacity, but stack them badly and your score collapses.
+            Create a room, bring in your planners, and build on a live map of India. Hospitals create service zones,
+            industries spread pollution, and your houses score on proximity.
           </p>
-        </div>
-        <div class="hero-card">
-          <p class="hero-label">Round Rules</p>
-          <ul>
-            <li>House near school: +15</li>
-            <li>House near hospital: +20</li>
-            <li>House near industry: -30</li>
-            <li>Clustered industries: penalty</li>
-          </ul>
-        </div>
-      </header>
+          <div class="hero-rules">
+            <div class="rule-card">
+              <strong>School access</strong>
+              <span>Houses near schools score +15</span>
+            </div>
+            <div class="rule-card">
+              <strong>Healthcare</strong>
+              <span>Houses near hospitals score +20</span>
+            </div>
+            <div class="rule-card">
+              <strong>Pollution</strong>
+              <span>Houses near industries lose 30 points</span>
+            </div>
+          </div>
+        </section>
 
-      <main class="main-layout">
-        <section class="panel" id="lobbyPanel">
+        <section class="panel lobby-panel">
           <div class="panel-header">
             <h2>Lobby</h2>
             <span class="status-pill" id="connectionStatus">Connecting...</span>
@@ -40,73 +49,152 @@
             <input id="playerName" type="text" maxlength="18" placeholder="Planner name" />
           </label>
 
-          <div class="lobby-actions">
-            <button id="createRoomBtn" class="primary-btn">Create Room</button>
-          </div>
+          <button id="createRoomBtn" class="primary-btn">Create Room</button>
 
-          <div class="join-box">
-            <label class="field">
-              <span>Room code</span>
-              <input id="roomCodeInput" type="text" maxlength="5" placeholder="ABCDE" />
-            </label>
-            <button id="joinRoomBtn" class="secondary-btn">Join Room</button>
-          </div>
+          <div class="divider">or join an existing room</div>
 
+          <label class="field">
+            <span>Room code</span>
+            <input id="roomCodeInput" type="text" maxlength="5" placeholder="ABCDE" />
+          </label>
+
+          <button id="joinRoomBtn" class="secondary-btn">Join Room</button>
           <p id="lobbyMessage" class="message"></p>
         </section>
+      </div>
+    </div>
 
-        <section class="game-layout hidden" id="gamePanel">
-          <div class="board-panel panel">
-            <div class="panel-header game-header">
-              <div>
-                <h2>Your Layout</h2>
-                <p class="subtle">Room <strong id="roomCodeLabel">-----</strong></p>
+    <div class="screen waiting-screen hidden" id="waitingScreen">
+      <div class="topbar waiting-topbar">
+        <div>
+          <p class="eyebrow">Room setup</p>
+          <h2>Ready Room</h2>
+        </div>
+        <div class="topbar-meta">
+          <span class="status-pill">Room <strong id="waitingRoomCode">-----</strong></span>
+          <span class="status-pill accent" id="waitingPhase">Lobby</span>
+        </div>
+      </div>
+
+      <div class="waiting-layout">
+        <section class="panel waiting-main">
+          <div class="panel-header">
+            <h3>Players joining</h3>
+            <button id="startRoundBtn" class="primary-btn">Start Round</button>
+          </div>
+          <p class="subtle">
+            Share the room code, wait for at least two planners, then start the round. When a round finishes, the
+            results will appear here before the next start.
+          </p>
+          <div id="playersList" class="players-list"></div>
+        </section>
+
+        <aside class="waiting-side">
+          <section class="panel">
+            <h3>Round info</h3>
+            <div class="info-stack">
+              <div class="info-row">
+                <span>Duration</span>
+                <strong>75 seconds</strong>
               </div>
-              <div class="timer-box">
-                <span>Timer</span>
-                <strong id="timerLabel">--:--</strong>
+              <div class="info-row">
+                <span>Placements</span>
+                <strong>4H / 2S / 2M / 3I</strong>
+              </div>
+              <div class="info-row">
+                <span>Map</span>
+                <strong>OpenStreetMap + Leaflet</strong>
               </div>
             </div>
-            <div id="grid" class="grid" aria-label="Urban planning grid"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <h3>Results</h3>
+              <span class="status-pill accent" id="leaderLabel">Waiting</span>
+            </div>
+            <div id="resultsList" class="results-list empty-state">Finish a round to see scores.</div>
+            <div id="winnerSummary" class="winner-summary hidden"></div>
+          </section>
+        </aside>
+      </div>
+    </div>
+
+    <div class="screen game-screen hidden" id="gameScreen">
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <div>
+            <p class="eyebrow">Live round</p>
+            <h2>Build on the map</h2>
           </div>
+          <div class="timer-card">
+            <span>Timer</span>
+            <strong id="timerLabel">--:--</strong>
+          </div>
+        </div>
 
-          <aside class="side-panel">
-            <section class="panel">
-              <div class="panel-header">
-                <h2>Planner Kit</h2>
-                <button id="startRoundBtn" class="primary-btn">Start Round</button>
-              </div>
-              <div id="itemPalette" class="palette"></div>
-              <p id="placementHint" class="message small"></p>
-            </section>
-
-            <section class="panel">
-              <div class="panel-header">
-                <h2>Players</h2>
-                <span class="status-pill" id="phasePill">Lobby</span>
-              </div>
-              <div id="playersList" class="players-list"></div>
-            </section>
-
-            <section class="panel">
-              <div class="panel-header">
-                <h2>Results</h2>
-                <span class="status-pill accent" id="leaderLabel">Waiting</span>
-              </div>
-              <div id="resultsList" class="results-list empty-state">
-                Finish a round to see scores.
-              </div>
-              <div id="winnerBoardWrap" class="winner-board-wrap hidden">
-                <p class="subtle strongish">Best layout</p>
-                <div id="winnerBoard" class="mini-grid"></div>
-              </div>
-            </section>
-          </aside>
+        <section class="panel compact-panel">
+          <div class="panel-header">
+            <h3>Planner kit</h3>
+            <span class="status-pill">Room <strong id="roomCodeLabel">-----</strong></span>
+          </div>
+          <div id="itemPalette" class="palette"></div>
+          <p id="placementHint" class="message small"></p>
         </section>
-      </main>
+
+        <section class="panel compact-panel">
+          <h3>Placed items</h3>
+          <div id="placedItemsList" class="placed-items-list empty-state">Click on the map to place your first marker.</div>
+        </section>
+
+        <section class="panel compact-panel">
+          <div class="score-card">
+            <span>Current score</span>
+            <strong id="currentScoreLabel">0</strong>
+          </div>
+        </section>
+
+        <section class="panel compact-panel">
+          <h3>Legend</h3>
+          <div class="legend-list">
+            <div class="legend-row">
+              <span class="legend-dot house-dot"></span>
+              <span>House marker</span>
+            </div>
+            <div class="legend-row">
+              <span class="legend-dot school-dot"></span>
+              <span>School marker</span>
+            </div>
+            <div class="legend-row">
+              <span class="legend-dot hospital-dot"></span>
+              <span>Hospital marker and service zone</span>
+            </div>
+            <div class="legend-row">
+              <span class="legend-dot industry-dot"></span>
+              <span>Industry marker and pollution zone</span>
+            </div>
+          </div>
+        </section>
+      </aside>
+
+      <section class="map-stage">
+        <div class="map-header">
+          <div>
+            <h3>Planning map</h3>
+            <p class="subtle">Pan and zoom across India, then click to place the selected building.</p>
+          </div>
+          <span class="status-pill accent" id="phasePill">Playing</span>
+        </div>
+        <div id="map" class="map-canvas" aria-label="Urban planning map"></div>
+      </section>
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
     <script src="/main.js"></script>
   </body>
   </html>

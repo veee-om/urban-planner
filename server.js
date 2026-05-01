@@ -8,7 +8,6 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
-const GRID_SIZE = 10;
 const ROUND_DURATION_MS = 75 * 1000;
 const DEFAULT_PLACEMENTS = {
   house: 4,
@@ -16,21 +15,39 @@ const DEFAULT_PLACEMENTS = {
   hospital: 2,
   industry: 3,
 };
+const SCORE_RULES = {
+  schoolBoostKm: 40,
+  hospitalBoostKm: 55,
+  industryPenaltyKm: 35,
+  industryClusterKm: 18,
+  industryClusterPenalty: 12,
+};
 
 const rooms = new Map();
 
 app.use(express.static(path.join(__dirname, "public")));
 
-function makeGrid() {
-  return Array.from({ length: GRID_SIZE }, () => Array(GRID_SIZE).fill(null));
-}
-
 function clonePlacements() {
   return { ...DEFAULT_PLACEMENTS };
 }
 
-function distance(a, b) {
-  return Math.abs(a.row - b.row) + Math.abs(a.col - b.col);
+function createPlacementId(playerId, count) {
+  return `${playerId}-${Date.now()}-${count}`;
+}
+
+function haversineDistanceKm(a, b) {
+  const toRadians = (value) => (value * Math.PI) / 180;
+  const earthRadiusKm = 6371;
+  const latDelta = toRadians(b.lat - a.lat);
+  const lngDelta = toRadians(b.lng - a.lng);
+  const lat1 = toRadians(a.lat);
+  const lat2 = toRadians(b.lat);
+
+  const value =
+    Math.sin(latDelta / 2) * Math.sin(latDelta / 2) +
+    Math.sin(lngDelta / 2) * Math.sin(lngDelta / 2) * Math.cos(lat1) * Math.cos(lat2);
+
+  return 2 * earthRadiusKm * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value));
 }
 
 function randomRoomCode() {
@@ -42,33 +59,25 @@ function randomRoomCode() {
   return rooms.has(code) ? randomRoomCode() : code;
 }
 
-function extractCells(grid) {
-  const cells = [];
-  for (let row = 0; row < GRID_SIZE; row += 1) {
-    for (let col = 0; col < GRID_SIZE; col += 1) {
-      const type = grid[row][col];
-      if (type) {
-        cells.push({ row, col, type });
-      }
-    }
-  }
-  return cells;
-}
-
-function scoreGrid(grid) {
-  const cells = extractCells(grid);
-  const houses = cells.filter((cell) => cell.type === "house");
-  const schools = cells.filter((cell) => cell.type === "school");
-  const hospitals = cells.filter((cell) => cell.type === "hospital");
-  const industries = cells.filter((cell) => cell.type === "industry");
+function scorePlacements(placements) {
+  const houses = placements.filter((placement) => placement.type === "house");
+  const schools = placements.filter((placement) => placement.type === "school");
+  const hospitals = placements.filter((placement) => placement.type === "hospital");
+  const industries = placements.filter((placement) => placement.type === "industry");
 
   let score = 0;
   const breakdown = [];
 
   for (const house of houses) {
-    const nearSchool = schools.some((target) => distance(house, target) <= 2);
-    const nearHospital = hospitals.some((target) => distance(house, target) <= 2);
-    const nearIndustry = industries.some((target) => distance(house, target) <= 2);
+    const nearSchool = schools.some(
+      (target) => haversineDistanceKm(house, target) <= SCORE_RULES.schoolBoostKm
+    );
+    const nearHospital = hospitals.some(
+      (target) => haversineDistanceKm(house, target) <= SCORE_RULES.hospitalBoostKm
+    );
+    const nearIndustry = industries.some(
+      (target) => haversineDistanceKm(house, target) <= SCORE_RULES.industryPenaltyKm
+    );
 
     if (nearSchool) {
       score += 15;
@@ -87,8 +96,8 @@ function scoreGrid(grid) {
   let clusterPenalty = 0;
   for (let index = 0; index < industries.length; index += 1) {
     for (let next = index + 1; next < industries.length; next += 1) {
-      if (distance(industries[index], industries[next]) <= 1) {
-        clusterPenalty += 12;
+      if (haversineDistanceKm(industries[index], industries[next]) <= SCORE_RULES.industryClusterKm) {
+        clusterPenalty += SCORE_RULES.industryClusterPenalty;
       }
     }
   }
@@ -98,22 +107,32 @@ function scoreGrid(grid) {
     breakdown.push(`Industry cluster penalty -${clusterPenalty}`);
   }
 
-  return { score, breakdown };
+  return {
+    score,
+    breakdown,
+    stats: {
+      houses: houses.length,
+      schools: schools.length,
+      hospitals: hospitals.length,
+      industries: industries.length,
+    },
+  };
 }
 
-function summarizePlayer(player) {
+function summarizePlayer(room, player) {
+  const preview = room.phase === "results" ? { score: player.score } : scorePlacements(player.placements);
   return {
     id: player.id,
     name: player.name,
     isHost: player.isHost,
-    score: player.score,
+    score: preview.score,
     placementsLeft: player.placementsLeft,
-    readyPlacements: Object.values(player.placementsLeft).reduce((sum, value) => sum + value, 0),
+    placementsUsed: player.placements.length,
   };
 }
 
 function serializeRoom(room) {
-  const players = Array.from(room.players.values()).map(summarizePlayer);
+  const players = Array.from(room.players.values()).map((player) => summarizePlayer(room, player));
   const leader = room.results?.[0] || null;
 
   return {
@@ -123,8 +142,8 @@ function serializeRoom(room) {
     endsAt: room.endsAt,
     players,
     leader,
-    winnerBoard: room.winnerBoard,
     results: room.results,
+    winnerLayout: room.winnerLayout,
   };
 }
 
@@ -137,9 +156,12 @@ function emitBoard(room, socketId) {
   if (!player) {
     return;
   }
+
+  const preview = scorePlacements(player.placements);
   io.to(socketId).emit("board:update", {
-    grid: player.grid,
+    placements: player.placements,
     placementsLeft: player.placementsLeft,
+    currentScore: preview.score,
   });
 }
 
@@ -156,20 +178,21 @@ function finishRound(room) {
   room.endsAt = null;
 
   const results = Array.from(room.players.values()).map((player) => {
-    const outcome = scoreGrid(player.grid);
+    const outcome = scorePlacements(player.placements);
     player.score = outcome.score;
     return {
       id: player.id,
       name: player.name,
       score: outcome.score,
       breakdown: outcome.breakdown,
-      board: player.grid,
+      placements: player.placements,
+      stats: outcome.stats,
     };
   });
 
   results.sort((left, right) => right.score - left.score || left.name.localeCompare(right.name));
   room.results = results;
-  room.winnerBoard = results[0]?.board || null;
+  room.winnerLayout = results[0]?.placements || [];
 
   emitRoom(room);
 }
@@ -178,11 +201,11 @@ function startRound(room) {
   stopTimer(room);
   room.phase = "playing";
   room.results = null;
-  room.winnerBoard = null;
+  room.winnerLayout = [];
   room.endsAt = Date.now() + ROUND_DURATION_MS;
 
   for (const player of room.players.values()) {
-    player.grid = makeGrid();
+    player.placements = [];
     player.placementsLeft = clonePlacements();
     player.score = 0;
     emitBoard(room, player.id);
@@ -190,6 +213,17 @@ function startRound(room) {
 
   room.timer = setTimeout(() => finishRound(room), ROUND_DURATION_MS);
   emitRoom(room);
+}
+
+function createPlayer(id, name, isHost) {
+  return {
+    id,
+    name,
+    isHost,
+    placements: [],
+    placementsLeft: clonePlacements(),
+    score: 0,
+  };
 }
 
 function createRoom(hostSocket, playerName) {
@@ -202,32 +236,17 @@ function createRoom(hostSocket, playerName) {
     endsAt: null,
     timer: null,
     results: null,
-    winnerBoard: null,
+    winnerLayout: [],
   };
 
-  room.players.set(hostSocket.id, {
-    id: hostSocket.id,
-    name: playerName,
-    isHost: true,
-    grid: makeGrid(),
-    placementsLeft: clonePlacements(),
-    score: 0,
-  });
-
+  room.players.set(hostSocket.id, createPlayer(hostSocket.id, playerName, true));
   rooms.set(code, room);
   hostSocket.join(code);
   return room;
 }
 
 function joinRoom(socket, room, playerName) {
-  room.players.set(socket.id, {
-    id: socket.id,
-    name: playerName,
-    isHost: false,
-    grid: makeGrid(),
-    placementsLeft: clonePlacements(),
-    score: 0,
-  });
+  room.players.set(socket.id, createPlayer(socket.id, playerName, false));
   socket.join(room.code);
   emitBoard(room, socket.id);
   emitRoom(room);
@@ -245,6 +264,10 @@ function roomForSocket(socket) {
     }
   }
   return null;
+}
+
+function remainingPlacements(player) {
+  return Object.values(player.placementsLeft).reduce((sum, value) => sum + value, 0);
 }
 
 io.on("connection", (socket) => {
@@ -306,7 +329,7 @@ io.on("connection", (socket) => {
     callback({ ok: true });
   });
 
-  socket.on("game:place", ({ row, col, type }, callback = () => {}) => {
+  socket.on("game:place", ({ lat, lng, type }, callback = () => {}) => {
     const room = roomForSocket(socket);
     if (!room || room.phase !== "playing") {
       callback({ ok: false, message: "Round is not active." });
@@ -321,13 +344,8 @@ io.on("connection", (socket) => {
       return;
     }
 
-    if (!Number.isInteger(row) || !Number.isInteger(col) || row < 0 || col < 0 || row >= GRID_SIZE || col >= GRID_SIZE) {
-      callback({ ok: false, message: "Cell is out of bounds." });
-      return;
-    }
-
-    if (player.grid[row][col]) {
-      callback({ ok: false, message: "Cell already used." });
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      callback({ ok: false, message: "Invalid map location." });
       return;
     }
 
@@ -336,7 +354,12 @@ io.on("connection", (socket) => {
       return;
     }
 
-    player.grid[row][col] = targetType;
+    player.placements.push({
+      id: createPlacementId(player.id, player.placements.length + 1),
+      type: targetType,
+      lat: Number(lat.toFixed(6)),
+      lng: Number(lng.toFixed(6)),
+    });
     player.placementsLeft[targetType] -= 1;
 
     emitBoard(room, socket.id);
@@ -344,7 +367,7 @@ io.on("connection", (socket) => {
     callback({ ok: true });
 
     const everyoneDone = Array.from(room.players.values()).every(
-      (currentPlayer) => Object.values(currentPlayer.placementsLeft).reduce((sum, value) => sum + value, 0) === 0
+      (currentPlayer) => remainingPlacements(currentPlayer) === 0
     );
 
     if (everyoneDone) {
