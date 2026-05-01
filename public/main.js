@@ -106,12 +106,14 @@ function renderPalette() {
   ui.itemPalette.innerHTML = "";
   Object.entries(ITEM_META).forEach(([key, meta]) => {
     const left = state.placementsLeft[key] ?? 0;
+    const isSelected = state.selectedItem === key;
     const button = document.createElement("button");
-    button.className = `palette-item ${meta.colorClass} ${state.selectedItem === key ? "selected" : ""}`;
+    button.className = `palette-item ${meta.colorClass} ${isSelected ? "selected" : ""}`;
     button.disabled = left <= 0 || state.room?.phase !== "playing";
     button.innerHTML = `
+      <span class="palette-badge">${isSelected ? "Selected" : "Select"}</span>
       <strong>${meta.label}</strong>
-      <span>${left} left</span>
+      <span class="palette-count">${left} left</span>
     `;
     button.addEventListener("click", () => {
       state.selectedItem = key;
